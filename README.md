@@ -42,10 +42,10 @@ datastore-node --host 127.0.0.1 --port 9000 --data-dir ./storage
 ### Client Operations
 
 ```python
-from datastore.connector import DatastoreConnector
+from kvstore.client import KVStoreClient
 
 # Connect to running node
-client = DatastoreConnector("127.0.0.1", 9000)
+client = KVStoreClient("127.0.0.1", 9000)
 
 # Basic key-value operations
 client.set("username", "alice")
@@ -127,28 +127,19 @@ pytest -v                        # Verbose output
 ### Performance Benchmarking
 
 ```bash
-# Start a node
-datastore-node --port 9000 --data-dir ./bench_data &
-
 # Run write benchmark
-python utilities/perf_write_test.py --host 127.0.0.1 --port 9000 --count 10000
+python utilities/throughput_benchmark.py --host 127.0.0.1 --port 9000 --count 10000
 # Output: Throughput in operations/second
 ```
 
 ### Chaos Testing (Crash Recovery)
 
 ```bash
-# Automatically restart server every 5 seconds
-python utilities/chaos_test.py \
-  --command "datastore-node --port 9000 --data-dir ./chaos_data" \
-  --interval 5.0 \
-  --restart
+# Run resilience tests
+python utilities/resilience_test.py
 
-# In another terminal, stress the system
-while true; do
-  python utilities/perf_write_test.py --count 1000
-  sleep 1
-done
+# Or use the chaos killer for failure testing
+python scripts/chaos_killer.py --interval 5.0
 ```
 
 ## Architecture Overview
@@ -157,13 +148,13 @@ The system comprises five interconnected layers:
 
 | Layer | Responsibility | Key Files |
 |-------|-----------------|-----------|
-| **Network** | TCP socket handling, message routing | `network.py` |
-| **Persistence** | WAL, snapshots, recovery | `persistence.py` |
-| **Query Engine** | In-memory storage, indexing | `core.py` |
-| **Replication** | Multi-node sync, leader election | `replication.py` |
-| **Client** | Remote operation interface | `connector.py` |
+| **Network** | TCP socket handling, message routing | `socket_gateway.py`, `wire_protocol.py` |
+| **Persistence** | WAL, snapshots, recovery | `backup_manager.py`, `boot_handler.py` |
+| **Query Engine** | In-memory storage, indexing | `memory_engine.py`, `indexing.py` |
+| **Replication** | Multi-node sync, coordinator | `sync_coordinator.py`, `replication.py` |
+| **Client** | Remote operation interface | `client.py` |
 
-Detailed architecture documentation: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+Detailed architecture documentation: [SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md)
 
 ## Advanced Usage
 
@@ -247,7 +238,7 @@ Options:
 4. **Fast Recovery** — Snapshot + replay typically completes in <100ms
 5. **Replication Safety** — Primary waits for acknowledgment from replicas (in leader mode)
 
-See [DURABILITY.md](docs/DURABILITY.md) for failure recovery details.
+See [RELIABILITY_GUIDE.md](docs/RELIABILITY_GUIDE.md) for failure recovery details.
 
 ## Clustering & Failover
 
@@ -271,7 +262,7 @@ When primary becomes unavailable:
 - Eventual consistency
 - No single point of failure
 
-Full clustering guide: [CLUSTERING.md](docs/CLUSTERING.md)
+Full clustering guide: [MULTI_NODE_GUIDE.md](docs/MULTI_NODE_GUIDE.md)
 
 ## Search & Indexing
 
@@ -286,36 +277,51 @@ Full clustering guide: [CLUSTERING.md](docs/CLUSTERING.md)
 
 Indexes are maintained automatically on all mutations.
 
-Indexing deep dive: [INDEXING.md](docs/INDEXING.md)
+Indexing deep dive: [SEARCH_GUIDE.md](docs/SEARCH_GUIDE.md)
 
 ## Project Structure
 
 ```
 .
 ├── src/
-│   └── datastore/              # Core implementation
-│       ├── connector.py         # Client SDK
-│       ├── network.py          # Server & networking
-│       ├── core.py             # Query engine
-│       ├── persistence.py      # Durability layer
-│       ├── replication.py      # Clustering
-│       ├── indexing.py         # Search indexes
-│       ├── messaging.py        # Protocol
-│       ├── settings.py         # Configuration
-│       └── launcher.py         # CLI entry point
+│   ├── datastore/              # Network & persistence layer
+│   │   ├── socket_gateway.py    # TCP server implementation
+│   │   ├── wire_protocol.py     # Message protocol
+│   │   ├── memory_engine.py     # In-memory storage
+│   │   ├── backup_manager.py    # Snapshot & WAL
+│   │   ├── boot_handler.py      # Recovery on startup
+│   │   ├── sync_coordinator.py  # Replication coordinator
+│   │   ├── lookup_tables.py     # Index structures
+│   │   ├── remote_interface.py  # Remote node communication
+│   │   └── node_config.py       # Node configuration
+│   └── kvstore/                # Client & high-level API
+│       ├── server.py           # Server entry point
+│       ├── client.py           # Client SDK
+│       ├── engine.py           # Query execution
+│       ├── storage.py          # Storage abstraction
+│       ├── replication.py      # Replication logic
+│       ├── indexing.py         # Index management
+│       ├── protocol.py         # Protocol definitions
+│       ├── config.py           # Configuration
+│       └── cli.py              # CLI interface
+├── scripts/                    # Utility scripts
+│   ├── chaos_killer.py         # Failure injection
+│   └── benchmark_write.py      # Write benchmarks
 ├── utilities/                  # Operational tools
-│       ├── perf_write_test.py  # Throughput benchmark
-│       └── chaos_test.py       # Failure testing
+│   ├── throughput_benchmark.py  # Performance testing
+│   └── resilience_test.py       # Recovery testing
 ├── tests/                      # Test suite
-│       ├── test_core.py
-│       ├── test_persistence.py
-│       └── test_failover_integration.py
+│   ├── unit_engine_test.py
+│   ├── durability_test.py
+│   ├── cluster_failover_test.py
+│   ├── search_capability_test.py
+│   └── atomic_operations_test.py
 ├── docs/                       # Documentation
-│       ├── ARCHITECTURE.md
-│       ├── CLUSTERING.md
-│       ├── INDEXING.md
-│       └── DURABILITY.md
-└── pyproject.toml             # Project metadata
+│   ├── SYSTEM_DESIGN.md
+│   ├── MULTI_NODE_GUIDE.md
+│   ├── SEARCH_GUIDE.md
+│   └── RELIABILITY_GUIDE.md
+└── project_config.toml        # Project metadata
 ```
 
 ## Performance Characteristics
